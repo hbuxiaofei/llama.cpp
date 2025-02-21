@@ -14,6 +14,10 @@
 #include <stdlib.h> // for qsort
 #include <stdio.h>  // for GGML_ASSERT
 
+#ifdef GGML_USE_ALIB
+#include <alib_cpu.h>
+#endif
+
 #define GROUP_MAX_EPS 1e-15f
 #define GROUP_MAX_EPS_IQ3_XXS 1e-8f
 #define GROUP_MAX_EPS_IQ2_S 1e-8f
@@ -6112,6 +6116,12 @@ void ggml_vec_dot_q3_K_q8_K(int n, float * restrict s, size_t bs, const void * r
 
 }
 
+#ifdef GGML_USE_ALIB
+void ggml_vec_dot_q4_K_q8_K(int n, float * restrict s, size_t bs, const void * restrict vx, size_t bx, const void * restrict vy, size_t by, int nrc) {
+    alib_cpu_init();
+    wrap__ggml_vec_dot_q4_K_q8_K(n, s, bs, vx, bx, vy, by, nrc);
+}
+#else
 void ggml_vec_dot_q4_K_q8_K(int n, float * restrict s, size_t bs, const void * restrict vx, size_t bx, const void * restrict vy, size_t by, int nrc) {
     assert(n % QK_K == 0);
     assert(nrc == 1);
@@ -6855,6 +6865,7 @@ void ggml_vec_dot_q4_K_q8_K(int n, float * restrict s, size_t bs, const void * r
     *s = sumf;
 #endif
 }
+#endif
 
 void ggml_vec_dot_q5_K_q8_K(int n, float * restrict s, size_t bs, const void * restrict vx, size_t bx, const void * restrict vy,  size_t by, int nrc) {
     assert(n % QK_K == 0);

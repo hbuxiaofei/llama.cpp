@@ -25,6 +25,27 @@ function(ggml_add_cpu_backend_variant_impl tag_name)
         ggml-cpu/ggml-cpu-impl.h
         )
 
+
+        if (GGML_ALIB)
+            list (APPEND GGML_CPU_SOURCES
+                ggml-cpu/alib/alib_cpu.cpp
+            )
+            target_include_directories(${GGML_CPU_NAME} PRIVATE
+                ggml-cpu/alib/include
+                ggml-cpu/alib/dsdk/include
+            )
+            add_compile_definitions(GGML_USE_ALIB)
+            find_library(DSDK_ASOCK NAMES asock HINTS ggml-cpu/alib/dsdk/lib)
+            if (DSDK_ASOCK)
+                target_link_libraries(${GGML_CPU_NAME} PRIVATE
+                    ssl
+                    crypto
+                    crypt
+                    asock
+                )
+            endif()
+        endif()
+
     target_compile_features(${GGML_CPU_NAME} PRIVATE c_std_11 cxx_std_17)
     target_include_directories(${GGML_CPU_NAME} PRIVATE . ggml-cpu)
 
