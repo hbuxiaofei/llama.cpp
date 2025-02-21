@@ -154,7 +154,9 @@ extern "C" {
 #endif
 
 
-void alib_cpu_init(void)
+void __init__alib_cpu(void) __attribute__((constructor));
+
+void __init__alib_cpu(void)
 {
     af__load_library();
 }

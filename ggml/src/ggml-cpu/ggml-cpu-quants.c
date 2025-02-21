@@ -6118,7 +6118,7 @@ void ggml_vec_dot_q3_K_q8_K(int n, float * restrict s, size_t bs, const void * r
 
 #ifdef GGML_USE_ALIB
 void ggml_vec_dot_q4_K_q8_K(int n, float * restrict s, size_t bs, const void * restrict vx, size_t bx, const void * restrict vy, size_t by, int nrc) {
-    alib_cpu_init();
+    /* alib_cpu_init(); */
     wrap__ggml_vec_dot_q4_K_q8_K(n, s, bs, vx, bx, vy, by, nrc);
 }
 #else
