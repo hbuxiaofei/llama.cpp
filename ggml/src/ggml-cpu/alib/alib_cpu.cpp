@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <limits.h>
 #include <unistd.h>
@@ -8,8 +9,15 @@
 #include <sys/time.h>
 #include <time.h>
 
+#define GGML_COMMON_DECL_C
+#include "ggml-common.h"
+#include "ggml-impl.h"
+#include "ggml-cpu-quants.h"
+
 #include "asock.h"
 #include "alib.h"
+
+#define AF_FN(fn) "af" #fn
 
 static int inner_asock = -1;
 
@@ -218,6 +226,16 @@ static int af__release_library()
     return 0;
 }
 
+
+int af__call(const char *fn, void *in, int inlen, void **out, int *outlen)
+{
+    int asock;
+    if (af_get_asock(&asock)) {
+        return -1;
+    }
+    return AFCall(asock, fn, in, inlen, out, outlen);
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -229,6 +247,13 @@ void __exit__alib_cpu(void) __attribute__((destructor));
 void __init__alib_cpu(void)
 {
     af__load_library();
+    for (int i = 0; i < (1 << 16); ++i) {
+        union {
+            uint16_t u16;
+            ggml_fp16_t fp16;
+        } u = {i};
+        ggml_table_f32_f16[i] = GGML_COMPUTE_FP16_TO_FP32(u.fp16);
+    }
 }
 
 /**
@@ -240,8 +265,167 @@ void __exit__alib_cpu(void)
     af__release_library();
 }
 
+
+uint8_t *serialize_ggml_vec_dot_q4_K_q8_K(int n, size_t bs,
+                                            const block_q4_K *vx, size_t bx,
+                                            const block_q8_K *vy, size_t by,
+                                            int nrc,
+                                            size_t *out_size)
+{
+    int qk = QK_K;
+    int nb = n / qk;
+
+
+    size_t total_size = sizeof(int) + sizeof(size_t) * 3 + sizeof(int) + nb * (sizeof(block_q4_K) + sizeof(block_q8_K));
+    uint8_t *data = (uint8_t *)malloc(total_size);
+
+
+    uint8_t *ptr = data;
+
+    // Serialize n
+    memcpy(ptr, &n, sizeof(int));
+    ptr += sizeof(int);
+
+    // Serialize bs
+    memcpy(ptr, &bs, sizeof(size_t));
+    ptr += sizeof(size_t);
+
+
+    // Serialize bx
+    memcpy(ptr, &bx, sizeof(size_t));
+    ptr += sizeof(size_t);
+
+    // Serialize by
+    memcpy(ptr, &by, sizeof(size_t));
+    ptr += sizeof(size_t);
+
+    // Serialize nrc
+    memcpy(ptr, &nrc, sizeof(int));
+    ptr += sizeof(int);
+
+    // Serialize vx (nb blocks of block_q4_K)
+    for (int i = 0; i < nb; i++) {
+        memcpy(ptr, &vx[i], sizeof(block_q4_K));
+        ptr += sizeof(block_q4_K);
+    }
+
+    // Serialize vy (nb blocks of block_q8_K)
+    for (int i = 0; i < nb; i++) {
+        memcpy(ptr, &vy[i], sizeof(block_q8_K));
+        ptr += sizeof(block_q8_K);
+    }
+
+    *out_size = total_size;
+    return data;
+}
+
+void deserialize_ggml_vec_dot_q4_K_q8_K(uint8_t *data, int *n, size_t *bs,
+                                            block_q4_K **vx, size_t *bx,
+                                            block_q8_K **vy, size_t *by,
+                                            int *nrc)
+{
+    uint8_t *ptr = data;
+    int qk = QK_K;
+    int nb = 0;
+
+
+    // Deserialize n
+    memcpy(n, ptr, sizeof(int));
+    ptr += sizeof(int);
+
+    nb = *n / qk;
+
+
+    // Deserialize bs
+    memcpy(bs, ptr, sizeof(size_t));
+    ptr += sizeof(size_t);
+
+    // Deserialize bx
+    memcpy(bx, ptr, sizeof(size_t));
+    ptr += sizeof(size_t);
+
+    // Deserialize by
+    memcpy(by, ptr, sizeof(size_t));
+    ptr += sizeof(size_t);
+
+    // Deserialize nrc
+    memcpy(nrc, ptr, sizeof(int));
+    ptr += sizeof(int);
+
+
+    // Deserialize vx (nb blocks of block_q4_K)
+    *vx = (block_q4_K *)malloc(nb * sizeof(block_q4_K));
+    for (int i = 0; i < nb; i++) {
+        memcpy(&(*vx)[i], ptr, sizeof(block_q4_K));
+        ptr += sizeof(block_q4_K);
+    }
+
+
+    // Deserialize vy (nb blocks of block_q8_K)
+    *vy = (block_q8_K *)malloc(nb * sizeof(block_q8_K));
+    for (int i = 0; i < nb; i++) {
+        memcpy(&(*vy)[i], ptr, sizeof(block_q8_K));
+        ptr += sizeof(block_q8_K);
+    }
+}
+
+int afwrap__ggml_vec_dot_q4_K_q8_K(void *in, int inlen, void **out, int *outlen)
+{
+    int n;
+    int qk = QK_K;
+    size_t bs;
+    size_t bx;
+    size_t by;
+    int nrc;
+    block_q4_K *vx = NULL;
+    block_q8_K *vy = NULL;
+    float *s = NULL;
+
+    deserialize_ggml_vec_dot_q4_K_q8_K((uint8_t *)in, &n, &bs, &vx, &bx, &vy, &by, &nrc);
+
+
+    s = (float *)calloc(1, sizeof(float) * n / qk);
+
+    ex__ggml_vec_dot_q4_K_q8_K(n, s, bs, vx, bx, vy, by, nrc);
+
+    if (vx) {
+        free(vx);
+    }
+    if (vy) {
+        free(vy);
+    }
+
+    *out = s;
+    *outlen = sizeof(float) * n / qk;
+
+    return 0;
+}
+
 void wrap__ggml_vec_dot_q4_K_q8_K(int n, float * s, size_t bs, const void *vx, size_t bx, const void *vy, size_t by, int nrc)
 {
+    void *in = NULL;
+    size_t inlen = 0;
+
+    void *out = NULL;
+    size_t outlen = 0;
+
+    in = serialize_ggml_vec_dot_q4_K_q8_K(n, bs, (block_q4_K *)vx, bx,
+            (block_q8_K *)vy, by,
+            nrc, &inlen);
+
+    af__call(AF_FN(wrap__ggml_vec_dot_q4_K_q8_K), in, inlen, &out, (int *)&outlen);
+
+    if (out && outlen > 0) {
+        memcpy(s, out, outlen);
+    }
+
+    if (out) {
+        free(out);
+    }
+
+    if (in) {
+        free(in);
+    }
 
 }
 

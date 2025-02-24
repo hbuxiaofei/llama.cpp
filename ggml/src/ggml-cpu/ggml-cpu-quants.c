@@ -6117,12 +6117,20 @@ void ggml_vec_dot_q3_K_q8_K(int n, float * restrict s, size_t bs, const void * r
 }
 
 #ifdef GGML_USE_ALIB
-void ggml_vec_dot_q4_K_q8_K(int n, float * restrict s, size_t bs, const void * restrict vx, size_t bx, const void * restrict vy, size_t by, int nrc) {
+void ggml_vec_dot_q4_K_q8_K(int n, float * restrict s, size_t bs,
+        const void * restrict vx, size_t bx,
+        const void * restrict vy, size_t by,
+        int nrc) {
     /* alib_cpu_init(); */
     wrap__ggml_vec_dot_q4_K_q8_K(n, s, bs, vx, bx, vy, by, nrc);
 }
+void ex__ggml_vec_dot_q4_K_q8_K(int n, float * restrict s, size_t bs,
+        const void * restrict vx, size_t bx,
+        const void * restrict vy, size_t by,
+        int nrc) {
 #else
 void ggml_vec_dot_q4_K_q8_K(int n, float * restrict s, size_t bs, const void * restrict vx, size_t bx, const void * restrict vy, size_t by, int nrc) {
+#endif
     assert(n % QK_K == 0);
     assert(nrc == 1);
     UNUSED(nrc);
@@ -6387,7 +6395,6 @@ void ggml_vec_dot_q4_K_q8_K(int n, float * restrict s, size_t bs, const void * r
     *s = sumf;
 
 #elif defined __AVX2__
-
     const __m256i m4 = _mm256_set1_epi8(0xF);
 
     __m256 acc = _mm256_setzero_ps();
@@ -6452,7 +6459,6 @@ void ggml_vec_dot_q4_K_q8_K(int n, float * restrict s, size_t bs, const void * r
     *s = hsum_float_8(acc) + _mm_cvtss_f32(acc_m);
 
 #elif defined __AVX__
-
     const __m128i m4 = _mm_set1_epi8(0xF);
     const __m128i m2 = _mm_set1_epi8(0x2);
 
@@ -6865,7 +6871,6 @@ void ggml_vec_dot_q4_K_q8_K(int n, float * restrict s, size_t bs, const void * r
     *s = sumf;
 #endif
 }
-#endif
 
 void ggml_vec_dot_q5_K_q8_K(int n, float * restrict s, size_t bs, const void * restrict vx, size_t bx, const void * restrict vy,  size_t by, int nrc) {
     assert(n % QK_K == 0);
