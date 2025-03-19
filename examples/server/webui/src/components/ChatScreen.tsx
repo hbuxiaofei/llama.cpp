@@ -238,7 +238,7 @@ export default function ChatScreen() {
         <div id="messages-list" className="grow">
           <div className="mt-auto flex justify-center">
             {/* placeholder to shift the message to the bottom */}
-            {viewingChat ? '' : 'Send a message to start'}
+            {viewingChat ? '' : 'Hi, 很高兴为你服务'}
           </div>
           {[...messages, ...pendingMsgDisplay].map((msg) => (
             <ChatMessage
