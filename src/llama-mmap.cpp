@@ -272,6 +272,7 @@ void llama_file::write_u32(uint32_t val) const { pimpl->write_u32(val); }
 struct llama_mmap::impl {
 #ifdef _POSIX_MAPPED_FILES
     std::vector<std::pair<size_t, size_t>> mapped_fragments;
+    bool using_hugepages;
 
     impl(struct llama_file * file, size_t prefetch, bool numa) {
         size = file->size();
@@ -285,10 +286,64 @@ struct llama_mmap::impl {
         }
         if (prefetch) { flags |= MAP_POPULATE; }
 #endif
-        addr = mmap(NULL, file->size(), PROT_READ, flags, fd, 0);
-        if (addr == MAP_FAILED) {
-            throw std::runtime_error(format("mmap failed: %s", strerror(errno)));
+        //addr = mmap(NULL, file->size(), PROT_READ, flags, fd, 0);
+        //if (addr == MAP_FAILED) {
+        //    throw std::runtime_error(format("mmap failed: %s", strerror(errno)));
+        //}
+
+        // 尝试直接分配 1GB 大页匿名内存
+        const size_t huge_page_size = 1 * 1024 * 1024 * 1024;
+        size_t aligned_size = (file->size() + huge_page_size - 1) & ~(huge_page_size - 1);
+
+        void* huge_addr = mmap(
+                /*addr=*/nullptr,
+                aligned_size,
+                PROT_READ | PROT_WRITE,
+                MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB,
+                /*fd=*/-1,
+                /*offset=*/0
+                );
+
+        if (huge_addr == MAP_FAILED) {
+            // 如果大页分配失败，回退到普通 mmap
+            LLAMA_LOG_WARN("huge page (%lx) allocation failed, using regular pages: %s\n",
+                    aligned_size, strerror(errno));
+            addr = mmap(
+                    /*addr=*/nullptr,
+                    file->size(),
+                    PROT_READ,
+                    flags,
+                    fd,
+                    /*offset=*/0
+                    );
+            if (addr == MAP_FAILED) {
+                throw std::runtime_error(format("mmap failed: %s", strerror(errno)));
+            }
+            using_hugepages = false;
+        } else {
+            using_hugepages = true;
+            // 成功分配大页后，直接将文件内容读取到大页区域，避免先普通 mmap 再 memcpy
+            size_t total_read = 0;
+            while (total_read < file->size()) {
+                ssize_t ret = pread(
+                        fd,
+                        static_cast<char*>(huge_addr) + total_read,
+                        file->size() - total_read,
+                        total_read
+                        );
+                if (ret < 0) {
+                    munmap(huge_addr, aligned_size);
+                    throw std::runtime_error(format("read to huge pages failed: %s", strerror(errno)));
+                }
+                if (ret == 0) {
+                    // 意外的 EOF
+                    break;
+                }
+                total_read += static_cast<size_t>(ret);
+            }
+            addr = huge_addr;
         }
+
 
         if (prefetch > 0) {
             if (posix_madvise(addr, std::min(file->size(), prefetch), POSIX_MADV_WILLNEED)) {
@@ -303,7 +358,7 @@ struct llama_mmap::impl {
             }
         }
 
-        mapped_fragments.emplace_back(0, file->size());
+        mapped_fragments.emplace_back(0,aligned_size);
     }
 
     static void align_range(size_t * first, size_t * last, size_t page_size) {
@@ -319,6 +374,10 @@ struct llama_mmap::impl {
     }
 
     void unmap_fragment(size_t first, size_t last) {
+        if (using_hugepages) {
+            // 使用大页时，禁用部分解除映射
+            return;
+        }
         int page_size = sysconf(_SC_PAGESIZE);
         align_range(&first, &last, page_size);
         size_t len = last - first;
