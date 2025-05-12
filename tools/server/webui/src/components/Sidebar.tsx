@@ -77,8 +77,8 @@ export default function Sidebar() {
 
         <div className="flex flex-col bg-base-200 min-h-full max-w-64 py-4 px-4">
           <div className="flex flex-row items-center justify-between mb-4 mt-4">
-            <h2 className="font-bold ml-4" role="heading">
-              Conversations
+            <h2 className="font-semibold ml-4 text-lg text-gray-500 hover:text-gray-400 transition-colors duration-300">
+              💬 所有对话
             </h2>
 
             {/* close sidebar button */}
@@ -103,7 +103,7 @@ export default function Sidebar() {
             aria-label="New conversation"
           >
             <PencilSquareIcon className="w-5 h-5" />
-            New conversation
+            新对话
           </button>
 
           {/* list of conversations */}

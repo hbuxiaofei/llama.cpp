@@ -239,7 +239,7 @@ export default function ChatScreen() {
               ''
             ) : (
               <>
-                <div className="mb-4">Send a message to start</div>
+                <div className="mb-4">Hi, 很高兴为你服务</div>
                 <ServerInfo />
               </>
             )}
