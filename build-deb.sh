@@ -11,7 +11,7 @@ BUILD_ARCHIVE="llama-engin"
 
 [ ! -d build ] && mkdir build
 
-cmake -B build -DGGML_RPC=ON -DLLAMA_CURL=ON
+cmake -B build -DGGML_RPC=ON -DLLAMA_CURL=ON -DGGML_CUDA=ON
 
 cmake --build build --config Release -j $(nproc) --target rpc-server --target llama-server
 
